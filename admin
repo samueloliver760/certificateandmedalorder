@@ -1,0 +1,357 @@
+// Isi dengan folder spreadsheet (Google Drive)
+const folder_drive = "";
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Admin")
+    .addItem("Sync Spreadsheet Peserta", "syncSpreadsheet")
+    .addItem("Sync Data", "syncDataPeserta")
+    .addToUi();
+}
+
+function syncSpreadsheet() {
+  const adminSS = SpreadsheetApp.getActiveSpreadsheet();
+  const masterSheet = adminSS.getSheetByName("MDB");
+  if (!masterSheet) return 0;
+
+  const headers = [
+    "Nama Choir",
+    "URL",
+    "Kompetisi",
+    "Kategori",
+    "Tanggal Submit Form",
+    "Terakhir Pengisian Data",
+    "Jumlah Sertifikat",
+    "Jumlah Medali",
+    "Total Harga Sertifikat (Rp)",
+    "Total Harga Medali (Rp)",
+    "Berat Sertifikat (kg)",
+    "Berat Medali (kg)",
+    "Total Berat (kg)",
+    "Total Ongkir (Rp)",
+    "Total Harga (Rp)",
+    "Sertifikat Lengkap ?",
+    "Medali Lengkap ?",
+    "Tanggal Pengiriman",
+    "No Resi",
+    "Status Pengiriman"
+  ];
+
+  const folder = DriveApp.getFolderById(folder_drive);
+  const files = folder.getFiles();
+
+  const rows = [];
+  const fileData = [];
+
+  while (files.hasNext()) {
+    const file = files.next();
+
+    if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) continue;
+
+    try {
+      const ss = SpreadsheetApp.openById(file.getId());
+      const sheet = ss.getSheets()[0];
+
+      const nama = sheet.getRange("K2").getValue();
+      const kompetisi = sheet.getRange("L2").getValue();
+      const kategori = sheet.getRange("M2").getValue();
+      const tanggalSubmit = sheet.getRange("I10").getValue();
+      const lastEdit = sheet.getRange("I9").getValue();
+
+      const jumlah_sertifikat = sheet.getRange("I6").getValue();
+      const jumlah_medali = sheet.getRange("I7").getValue();  
+      const harga_sertifikat = sheet.getRange("K6").getValue();
+      const harga_medali = sheet.getRange("K7").getValue();
+      const berat_sertifikat = sheet.getRange("L6").getValue();
+      const berat_medali = sheet.getRange("L7").getValue();
+      const total_berat = sheet.getRange("L9").getValue();
+      const total_ongkir = sheet.getRange("L12").getValue();
+      const grand_price = sheet.getRange("L13").getValue();
+
+      const sertifikat_lengkap = sheet.getRange("I12").getValue();
+      const medali_lengkap = sheet.getRange("I13").getValue();
+
+      const cb_serti = sertifikat_lengkap === "Sudah Semua";
+      const cb_medali = medali_lengkap === "Sudah Semua";
+
+      const tanggal_pengiriman = sheet.getRange("I17").getValue();
+
+      Logger.log(tanggal_pengiriman);
+      const no_resi = sheet.getRange("I16").getValue();
+      const status_pengiriman = sheet.getRange("I15").getValue();
+
+      if (!nama || !kompetisi || !kategori) continue;
+
+      fileData.push({
+        file,
+        sheet,
+        ss,
+        nama,
+        kompetisi,
+        kategori,
+        tanggalSubmit,
+        lastEdit,
+        jumlah_sertifikat,
+        jumlah_medali,
+        harga_sertifikat,
+        harga_medali,
+        berat_sertifikat,
+        berat_medali,
+        total_berat,
+        total_ongkir,
+        grand_price,
+        cb_serti,
+        cb_medali,
+        tanggal_pengiriman,
+        no_resi,
+        status_pengiriman
+      });
+
+    } catch (err) {
+      Logger.log("Error: " + file.getName() + " | " + err);
+    }
+  }
+
+  fileData.sort((a, b) => new Date(a.tanggalSubmit || 0) - new Date(b.tanggalSubmit || 0));
+
+  fileData.forEach(data => {
+
+    rows.push([
+      data.nama,
+      data.ss.getUrl(),
+      data.kompetisi,
+      data.kategori,
+      data.tanggalSubmit,
+      data.lastEdit,
+      data.jumlah_sertifikat,
+      data.jumlah_medali,
+      data.harga_sertifikat,
+      data.harga_medali,
+      data.berat_sertifikat,
+      data.berat_medali,
+      data.total_berat,
+      data.total_ongkir,
+      data.grand_price,
+      data.cb_serti,
+      data.cb_medali,
+      data.tanggal_pengiriman,
+      data.no_resi,
+      data.status_pengiriman
+    ]);
+
+    const namaSheet = data.file.getName().substring(0, 90);
+
+    if (!adminSS.getSheetByName(namaSheet)) {
+      const copied = data.sheet.copyTo(adminSS);
+      copied.setName(namaSheet);
+    }
+  });
+
+  if (rows.length > 0) {
+    masterSheet.clearContents();
+
+    masterSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    masterSheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+
+    const startRow = 2;
+    const numRows = rows.length;
+
+    masterSheet.getRange(startRow, 16, numRows, 2).insertCheckboxes();
+
+    const statusRange = masterSheet.getRange(startRow, 1, numRows, 20);
+
+    const rules = masterSheet.getConditionalFormatRules();
+
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=$T2="Sudah diterima"')
+        .setBackground("#b7e1cd")
+        .setRanges([statusRange])
+        .build()
+    );
+
+    masterSheet.setConditionalFormatRules(rules);
+  }
+  return rows.length;
+}
+
+function onEditInstallable(e) {
+  if (!e) return;
+
+  const range = e.range;
+  const sheet = range.getSheet();
+
+  if (sheet.getName() === "MDB") return;
+
+  // ambil semua value jika drag / paste banyak cell
+  const values = range.getValues();
+
+  const startRow = range.getRow();
+  const startCol = range.getColumn();
+
+  for (let r = 0; r < values.length; r++) {
+    for (let c = 0; c < values[r].length; c++) {
+
+      const row = startRow + r;
+      const col = startCol + c;
+
+      const cell = sheet.getRange(row, col);
+      const a1 = cell.getA1Notation();
+
+      // cek apakah cell termasuk target sync
+      if (!isSyncTarget(cell)) continue;
+
+      const value = values[r][c];
+      const sheetName = sheet.getName();
+
+      syncAdminToPeserta(sheetName, a1, value);
+    }
+  }
+}
+
+// Isi dengan spreadsheet Admin
+const ADMIN_SPREADSHEET_ID = ""; 
+
+function isSyncTarget(range) {
+  const row = range.getRow();
+  const col = range.getColumn();
+  const a1 = range.getA1Notation();
+
+  if (["I12", "I13", "I15", "J6", "J7", "M6", "M7", "L11", "I16", "I17"].includes(a1)) return true;
+
+  if (col === 5) return true;
+
+  return false;
+}
+
+function isSyncing() {
+  return PropertiesService.getScriptProperties().getProperty("SYNC") === "1";
+}
+
+function setSyncing(val) {
+  PropertiesService.getScriptProperties().setProperty("SYNC", val ? "1" : "0");
+}
+
+function syncAdminToPeserta(sheetName, cell, value) {
+  const folder = DriveApp.getFolderById(folder_drive);
+  const files = folder.getFiles();
+
+  while (files.hasNext()) {
+    const file = files.next();
+
+    if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) continue;
+
+    const fileName = file.getName().substring(0, 90);
+
+    if (fileName !== sheetName) continue;
+
+    try {
+      const ss = SpreadsheetApp.openById(file.getId());
+      const sheet = ss.getSheets()[0];
+
+      sheet.getRange(cell).setValue(value);
+
+      Logger.log(`SYNC ADMIN → PESERTA: ${fileName} | ${cell}`);
+
+    } catch (err) {
+      Logger.log("ERROR: " + err);
+    }
+
+    break;
+  }
+}
+
+function syncToAllParticipants(cellA1, newValue) {
+  const lock = LockService.getScriptLock();
+
+  if (!lock.tryLock(10000)) return;
+  if (isSyncing()) return;
+
+  setSyncing(true);
+
+  try {
+    const folder = DriveApp.getFolderById(folder_drive);
+    const files = folder.getFiles();
+
+    while (files.hasNext()) {
+      const file = files.next();
+
+      if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) continue;
+
+      try {
+        const ss = SpreadsheetApp.openById(file.getId());
+        const sheet = ss.getSheets()[0];
+
+        sheet.getRange(cellA1).setValue(newValue);
+
+      } catch (err) {
+        Logger.log(err);
+      }
+    }
+
+  } finally {
+    setSyncing(false);
+    lock.releaseLock();
+  }
+}
+
+function syncDataPeserta() {
+  const lock = LockService.getScriptLock();
+
+  if (!lock.tryLock(10000)) {
+    Logger.log("SKIP: sedang ada proses lain");
+    return;
+  }
+
+  if (isSyncing()) {
+    Logger.log("SKIP: sedang syncing");
+    return;
+  }
+
+  setSyncing(true);
+
+  try {
+    const adminSS = SpreadsheetApp.getActiveSpreadsheet();
+    const folder = DriveApp.getFolderById(folder_drive);
+    const files = folder.getFiles();
+
+    while (files.hasNext()) {
+      const file = files.next();
+
+      if (file.getMimeType() !== MimeType.GOOGLE_SHEETS) continue;
+
+      try {
+        const ss = SpreadsheetApp.openById(file.getId());
+        const source = ss.getSheets()[0];
+
+        const sheetName = file.getName().substring(0, 90);
+        const target = adminSS.getSheetByName(sheetName);
+
+        if (!target) continue;
+
+        const lastRow = source.getLastRow();
+        const data = source.getRange(1, 1, lastRow, 6).getValues();
+
+        const colA = data.map(r => [r[0]]);
+        const colB = data.map(r => [r[1]]);
+        const colC = data.map(r => [r[2]]);
+        const colD = data.map(r => [r[3]]);
+        const colF = data.map(r => [r[5]]);
+
+        target.getRange(1, 1, lastRow, 1).setValues(colA);
+        target.getRange(1, 2, lastRow, 1).setValues(colB);
+        target.getRange(1, 3, lastRow, 1).setValues(colC);
+        target.getRange(1, 4, lastRow, 1).setValues(colD);
+        target.getRange(1, 6, lastRow, 1).setValues(colF);
+        target.getRange("I9").setValue(new Date());
+
+      } catch (err) {
+        Logger.log("ERROR: " + err);
+      }
+    }
+
+  } finally {
+    setSyncing(false);
+    lock.releaseLock();
+  }
+} 
