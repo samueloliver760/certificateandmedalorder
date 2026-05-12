@@ -1,0 +1,133 @@
+// Isi dengan id templete 
+const id_templete = "";
+
+// Isi dengan id folder spreadsheet (Google Drive)
+const id_folder = "";
+
+// Isi dengan email admin
+const email_admin = "";
+
+
+function onFormSubmit(e) {
+  
+
+  const data = e.namedValues;
+
+  const form_email = data["Email Address"][0];
+  const form_name =  data["Nama PIC"][0];
+  const form_phone = data["No HP"][0];
+  const form_choir = data["Nama Choir"][0];
+  const form_event = data["Event"][0];
+  const form_category = data["Kategori"][0];
+  const form_address1 = data["Alamat 1"][0];
+  const form_address2 = data["Alamat 2"][0]; 
+  const form_city = data["Kota / Kabupaten"][0];
+  const form_province = data["Provinsi"][0];
+  const form_postal = data["Kode Pos"][0]; 
+
+
+  const timestamp = e.values[0];
+
+
+  const sheet_name = `${form_choir} - ${form_event} - ${form_category}`
+
+ 
+  const templateFile = DriveApp.getFileById(id_templete);
+
+  const copy = templateFile.makeCopy(sheet_name);
+
+
+  Drive.Permissions.create(
+    {
+      role: "writer",
+      type: "user",
+      emailAddress: form_email
+    },
+    copy.getId(),
+    {
+      sendNotificationEmail: false
+    }
+  );
+  
+
+  const folder = DriveApp.getFolderById(id_folder);
+  copy.moveTo(folder);
+
+
+  const ss = SpreadsheetApp.openById(copy.getId());
+  const sheet = ss.getSheets()[0];
+
+  ScriptApp.newTrigger("onEditHandler")
+  .forSpreadsheet(ss)
+  .onEdit()
+  .create();
+
+
+  sheet.setName(sheet_name);
+
+
+  sheet.getRange("H2").setValue(form_email);
+  sheet.getRange("I2").setValue(form_name);
+  sheet.getRange("J2").setValue(form_phone);
+  sheet.getRange("K2").setValue(form_choir);
+  sheet.getRange("L2").setValue(form_event);
+  sheet.getRange("M2").setValue(form_category);
+  sheet.getRange("N2").setValue(form_address1);
+  sheet.getRange("O2").setValue(form_address2);
+  sheet.getRange("P2").setValue(form_city);
+  sheet.getRange("Q2").setValue(form_province);
+  sheet.getRange("R2").setValue(form_postal);
+
+
+  sheet.getRange("I10").setValue(timestamp);
+
+
+  ["E:E", "H5:M20"].forEach(r => {
+    const protection = sheet.getRange(r).protect();
+
+    protection.setDescription("This colomn can not edited by user");
+
+    protection.removeEditors(protection.getEditors());
+
+    if (protection.canDomainEdit()) {
+      protection.setDomainEdit(false);
+    }
+  });
+  
+
+  MailApp.sendEmail({
+    to: form_email,
+    subject: `Pemesanan Sertifikat dan Medali ${form_choir}`,
+    htmlBody:       
+      `Halo pak/bu ${form_name},<br>
+      Terimakasih telah melakukan pemesanan sertifikat dan medali untuk event ${form_event}. <br> 
+      Silakan mengisi spreadsheet berikut untuk melanjutkan pemesanan Anda:<br>
+      <a href="${ss.getUrl()}" target="_blank">${ss.getUrl()}</a><br><br>
+      Jika terdapat perubahaan data pada form, mohon hubungin Admin BCS. <br>
+
+      Salam, <br> Bandung Choral Society` 
+  })
+}
+
+function onEditHandler(e) {
+  if (!e) return;
+
+  const range = e.range;
+  const sheet = range.getSheet();
+
+  const row = range.getRow();
+  const col = range.getColumn();
+
+  const allowedCols = [1, 2, 3, 4, 6];
+
+  if (
+    row >= 1 &&
+    row <= 100 &&
+    allowedCols.includes(col)
+  ) {
+    const cell = sheet.getRange("I9");
+
+    cell.setValue(new Date());
+    cell.setNumberFormat("dd/MM/yyyy HH:mm");
+  }
+}
